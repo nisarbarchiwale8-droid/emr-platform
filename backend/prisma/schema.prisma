@@ -1,0 +1,496 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMINISTRATOR
+  DOCTOR
+  RECEPTIONIST
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum BloodGroup {
+  A_POSITIVE
+  A_NEGATIVE
+  B_POSITIVE
+  B_NEGATIVE
+  AB_POSITIVE
+  AB_NEGATIVE
+  O_POSITIVE
+  O_NEGATIVE
+  UNKNOWN
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_QUEUE
+  IN_CONSULTATION
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+  REFUNDED
+  WAIVED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  UPI
+  NET_BANKING
+  CHEQUE
+}
+
+enum BillStatus {
+  DRAFT
+  FINALIZED
+  PAID
+  PARTIALLY_PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum AuditAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  PRINT
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+// ─── Subscription Plans ───────────────────────────────────────────────────────
+
+model SubscriptionPlan {
+  id              String       @id @default(uuid())
+  name            String
+  slug            String       @unique
+  description     String?
+  price           Decimal      @db.Decimal(10, 2)
+  billingCycle    BillingCycle
+  maxDoctors      Int
+  maxPatients     Int
+  features        Json
+  isActive        Boolean      @default(true)
+  razorpayPlanId  String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                    String             @id @default(uuid())
+  clinicId              String             @unique
+  planId                String
+  status                SubscriptionStatus @default(TRIAL)
+  currentPeriodStart    DateTime
+  currentPeriodEnd      DateTime
+  razorpayOrderId       String?
+  razorpayPaymentId     String?
+  razorpaySignature     String?
+  amount                Decimal            @db.Decimal(10, 2)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  clinic Clinic           @relation(fields: [clinicId], references: [id])
+  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@index([status])
+  @@map("subscriptions")
+}
+
+// ─── Clinic ───────────────────────────────────────────────────────────────────
+
+model Clinic {
+  id           String   @id @default(uuid())
+  name         String
+  code         String   @unique
+  address      String?
+  city         String?
+  state        String?
+  pincode      String?
+  phone        String?
+  email        String?
+  gstin        String?
+  logoUrl      String?
+  timezone     String   @default("Asia/Kolkata")
+  currency     String   @default("INR")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users        User[]
+  patients     Patient[]
+  appointments Appointment[]
+  bills        Bill[]
+  auditLogs    AuditLog[]
+  subscription Subscription?
+
+  @@index([code])
+  @@map("clinics")
+}
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String     @id @default(uuid())
+  clinicId     String
+  firstName    String
+  lastName     String
+  email        String
+  phone        String?
+  passwordHash String
+  role         UserRole
+  status       UserStatus @default(ACTIVE)
+  avatarUrl    String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  clinic         Clinic          @relation(fields: [clinicId], references: [id])
+  refreshTokens  RefreshToken[]
+  doctorProfile  DoctorProfile?
+  auditLogs      AuditLog[]
+  appointments   Appointment[]   @relation("DoctorAppointments")
+  vitalsRecorded Vitals[]        @relation("VitalsRecordedBy")
+  notesAuthored  SoapNote[]      @relation("NoteAuthor")
+  billsCreated   Bill[]          @relation("BillCreatedBy")
+
+  @@unique([email, clinicId])
+  @@index([clinicId, role])
+  @@index([email])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model DoctorProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  specialization   String?
+  qualification    String?
+  registrationNo   String?
+  consultationFee  Decimal  @default(0) @db.Decimal(10, 2)
+  followUpFee      Decimal  @default(0) @db.Decimal(10, 2)
+  signatureUrl     String?
+  bio              String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("doctor_profiles")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([token])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ─── Patients ─────────────────────────────────────────────────────────────────
+
+model Patient {
+  id              String     @id @default(uuid())
+  clinicId        String
+  uhid            String
+  firstName       String
+  lastName        String
+  phone           String
+  alternatePhone  String?
+  email           String?
+  dateOfBirth     DateTime?
+  age             Int?
+  gender          Gender
+  bloodGroup      BloodGroup @default(UNKNOWN)
+  address         String?
+  city            String?
+  pincode         String?
+  emergencyName   String?
+  emergencyPhone  String?
+  isActive        Boolean    @default(true)
+  notes           String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
+  appointments Appointment[]
+  bills        Bill[]
+
+  @@unique([uhid, clinicId])
+  @@index([clinicId, phone])
+  @@index([clinicId, uhid])
+  @@index([firstName, lastName])
+  @@index([deletedAt])
+  @@map("patients")
+}
+
+// ─── Appointments ─────────────────────────────────────────────────────────────
+
+model Appointment {
+  id           String            @id @default(uuid())
+  clinicId     String
+  patientId    String
+  doctorId     String
+  scheduledAt  DateTime
+  tokenNumber  Int?
+  status       AppointmentStatus @default(SCHEDULED)
+  type         String            @default("CONSULTATION")
+  chiefComplaint String?
+  notes        String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+
+  clinic   Clinic   @relation(fields: [clinicId], references: [id])
+  patient  Patient  @relation(fields: [patientId], references: [id])
+  doctor   User     @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  vitals   Vitals?
+  soapNote SoapNote?
+  bill     Bill?
+
+  @@index([clinicId, scheduledAt])
+  @@index([clinicId, doctorId, scheduledAt])
+  @@index([patientId])
+  @@index([status])
+  @@map("appointments")
+}
+
+// ─── Vitals ───────────────────────────────────────────────────────────────────
+
+model Vitals {
+  id              String   @id @default(uuid())
+  appointmentId   String   @unique
+  recordedById    String
+  temperature     Decimal? @db.Decimal(4, 1)
+  systolicBP      Int?
+  diastolicBP     Int?
+  pulseRate       Int?
+  respiratoryRate Int?
+  oxygenSaturation Decimal? @db.Decimal(4, 1)
+  weight          Decimal? @db.Decimal(6, 2)
+  height          Decimal? @db.Decimal(5, 1)
+  bmi             Decimal? @db.Decimal(4, 1)
+  bloodGlucose    Decimal? @db.Decimal(6, 1)
+  notes           String?
+  recordedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  appointment  Appointment @relation(fields: [appointmentId], references: [id])
+  recordedBy   User        @relation("VitalsRecordedBy", fields: [recordedById], references: [id])
+
+  @@map("vitals")
+}
+
+// ─── SOAP Notes ───────────────────────────────────────────────────────────────
+
+model SoapNote {
+  id              String   @id @default(uuid())
+  appointmentId   String   @unique
+  authorId        String
+  subjective      String?  @db.Text
+  objective       String?  @db.Text
+  assessment      String?  @db.Text
+  plan            String?  @db.Text
+  followUpDays    Int?
+  followUpNotes   String?
+  isAiAssisted    Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  appointment Appointment   @relation(fields: [appointmentId], references: [id])
+  author      User          @relation("NoteAuthor", fields: [authorId], references: [id])
+  diagnoses   Diagnosis[]
+  prescriptions Prescription[]
+
+  @@map("soap_notes")
+}
+
+// ─── Diagnosis ────────────────────────────────────────────────────────────────
+
+model Diagnosis {
+  id          String   @id @default(uuid())
+  soapNoteId  String
+  icdCode     String?
+  description String
+  type        String   @default("PRIMARY")
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  soapNote SoapNote @relation(fields: [soapNoteId], references: [id])
+
+  @@index([soapNoteId])
+  @@index([icdCode])
+  @@map("diagnoses")
+}
+
+// ─── Prescriptions ────────────────────────────────────────────────────────────
+
+model Prescription {
+  id           String   @id @default(uuid())
+  soapNoteId   String
+  medicineName String
+  genericName  String?
+  dosage       String?
+  frequency    String?
+  duration     String?
+  route        String?
+  instructions String?
+  quantity     Int?
+  createdAt    DateTime @default(now())
+
+  soapNote SoapNote @relation(fields: [soapNoteId], references: [id])
+
+  @@index([soapNoteId])
+  @@map("prescriptions")
+}
+
+// ─── Billing ──────────────────────────────────────────────────────────────────
+
+model Bill {
+  id              String      @id @default(uuid())
+  clinicId        String
+  patientId       String
+  appointmentId   String?     @unique
+  billNumber      String
+  billDate        DateTime    @default(now())
+  subtotal        Decimal     @db.Decimal(10, 2)
+  discountAmount  Decimal     @default(0) @db.Decimal(10, 2)
+  discountPercent Decimal     @default(0) @db.Decimal(5, 2)
+  taxAmount       Decimal     @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal     @db.Decimal(10, 2)
+  paidAmount      Decimal     @default(0) @db.Decimal(10, 2)
+  dueAmount       Decimal     @db.Decimal(10, 2)
+  status          BillStatus  @default(DRAFT)
+  paymentStatus   PaymentStatus @default(PENDING)
+  notes           String?
+  createdById     String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?
+
+  clinic      Clinic      @relation(fields: [clinicId], references: [id])
+  patient     Patient     @relation(fields: [patientId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  createdBy   User        @relation("BillCreatedBy", fields: [createdById], references: [id])
+  lineItems   BillItem[]
+  payments    Payment[]
+
+  @@unique([billNumber, clinicId])
+  @@index([clinicId, billDate])
+  @@index([patientId])
+  @@index([paymentStatus])
+  @@map("bills")
+}
+
+model BillItem {
+  id          String   @id @default(uuid())
+  billId      String
+  description String
+  category    String
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  totalPrice  Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+
+  bill Bill @relation(fields: [billId], references: [id])
+
+  @@index([billId])
+  @@map("bill_items")
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  billId        String
+  amount        Decimal       @db.Decimal(10, 2)
+  method        PaymentMethod
+  referenceNo   String?
+  notes         String?
+  paidAt        DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+
+  bill Bill @relation(fields: [billId], references: [id])
+
+  @@index([billId])
+  @@map("payments")
+}
+
+// ─── Audit Logs ───────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id           String      @id @default(uuid())
+  clinicId     String
+  userId       String?
+  action       AuditAction
+  entity       String
+  entityId     String?
+  oldValues    Json?
+  newValues    Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime    @default(now())
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+  user   User?  @relation(fields: [userId], references: [id])
+
+  @@index([clinicId, createdAt])
+  @@index([userId])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
