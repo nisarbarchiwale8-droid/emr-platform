@@ -9,7 +9,7 @@ const required = (key) => {
 
 export const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
-  PORT: parseInt(process.env.PORT || '5000', 10),
+  PORT: parseInt(process.env.PORT || '5001', 10),
   APP_NAME: process.env.APP_NAME || 'EMR Platform',
 
   DATABASE_URL: required('DATABASE_URL'),

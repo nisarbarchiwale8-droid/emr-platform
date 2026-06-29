@@ -11,7 +11,9 @@
     "dev:frontend": "npm run dev --workspace=frontend",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "migrate": "npm run migrate --workspace=backend",
-    "studio": "npm run studio --workspace=backend"
+    "studio": "npm run studio --workspace=backend",
+    "build": "cd frontend && npm install --legacy-peer-deps && npm run build && cp -r dist ../backend/public",
+    "install:all": "cd frontend && npm install --legacy-peer-deps && cd ../backend && npm install --legacy-peer-deps"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

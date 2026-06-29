@@ -1,19 +1,17 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 import { env } from './config/env.js';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { globalLimiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
 
-// Route imports
 import authRoutes from './modules/auth/auth.routes.js';
 import patientRoutes from './modules/patients/patients.routes.js';
 import appointmentRoutes from './modules/appointments/appointments.routes.js';
@@ -28,19 +26,17 @@ import settingsRoutes from './modules/settings/settings.routes.js';
 import registrationRoutes from './modules/registration/registration.routes.js';
 import publicRoutes from './modules/public/public.routes.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 // ─── Security Headers ────────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // allow Vite-built assets
+}));
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
-// In production the frontend is served from the same origin, so allow that too
-const corsOrigins = env.isProduction
-  ? true  // same-origin — allow all (helmet already handles security headers)
-  : env.FRONTEND_URL;
-
 app.use(cors({
-  origin: corsOrigins,
+  origin: env.isProduction ? true : env.FRONTEND_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -71,7 +67,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', env: env.NODE_ENV, version: '1.0.0' });
 });
 
-// ─── Routes ──────────────────────────────────────────────────────────────────
+// ─── API Routes ──────────────────────────────────────────────────────────────
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/patients', patientRoutes);
 app.use('/api/v1/appointments', appointmentRoutes);
@@ -86,16 +82,14 @@ app.use('/api/v1/settings', settingsRoutes);
 app.use('/api/v1/registration', registrationRoutes);
 app.use('/api/v1/public', publicRoutes);
 
-// ─── Serve Frontend (production) ─────────────────────────────────────────────
+// ─── Serve Frontend static files (production only) ───────────────────────────
 if (env.isProduction) {
   const publicDir = path.join(__dirname, '../../public');
-  app.use(express.static(publicDir));
-  // SPA fallback — any non-API route serves index.html
+  app.use(express.static(publicDir, { maxAge: '1d' }));
   app.get('*', (req, res) => {
     res.sendFile(path.join(publicDir, 'index.html'));
   });
 } else {
-  // ─── 404 Handler (dev only) ────────────────────────────────────────────────
   app.use((req, res) => {
     res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
   });
