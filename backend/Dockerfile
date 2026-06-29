@@ -1,10 +1,11 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# Build context is repo root; copy backend files
-COPY backend/package*.json ./
+# Build context is repo root; copy backend files + root lockfile
+COPY backend/package.json ./
+COPY package-lock.json ./
 COPY backend/prisma ./prisma/
-RUN npm ci --omit=dev
+RUN npm install --omit=dev --ignore-scripts
 
 # Copy backend source
 COPY backend/ .
