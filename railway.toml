@@ -2,8 +2,8 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "cd backend && npx prisma migrate deploy && node src/server.js"
+startCommand = "cd backend && sh scripts/railway-start.sh"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
